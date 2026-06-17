@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>小屋日記</title>
+<style>
+  :root{
+    --cream:#F4ECDD;
+    --cream-deep:#EADFC8;
+    --wood:#6B4A35;
+    --wood-dark:#4A3324;
+    --roof:#B5563C;
+    --roof-dark:#8E4029;
+    --moss:#7A9168;
+    --moss-light:#9BB088;
+    --stain:#9C9183;
+    --stain-dark:#6E6458;
+    --ink:#4A3324;
+    --paper:#FBF6EA;
+    --gold:#C99A4A;
+    --sky-top:#D8E6E0;
+    --sky-bot:#F4ECDD;
+  }
+  *{box-sizing:border-box;}
+  html,body{
+    margin:0;padding:0;height:100%;
+    font-family:"Noto Serif TC","Georgia",serif;
+    background:linear-gradient(180deg,var(--sky-top),var(--sky-bot));
+    color:var(--ink);
+    overflow:hidden;
+  }
+  #app{
+    width:100%;height:100vh;
+    display:flex;flex-direction:column;
+    position:relative;
+  }
+
+  /* ---------- 標題列 ---------- */
+  #titlebar{
+    padding:14px 20px 6px;
+    text-align:center;
+    flex-shrink:0;
+  }
+  #titlebar h1{
+    margin:0;
+    font-size:22px;
+    letter-spacing:4px;
+    color:var(--wood-dark);
+    font-weight:600;
+  }
+  #titlebar p{
+    margin:4px 0 0;
+    font-size:12px;
+    color:var(--stain-dark);
+    letter-spacing:2px;
+  }
+
+  /* ---------- 場景容器 ---------- */
+  #scene-wrap{
+    flex:1;
+    position:relative;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:10px 16px;
+    min-height:0;
+  }
+  #houseSvgHolder{
+    position:relative;
+    z-index:1;
+    width:100%;
+    max-width:760px;
+    aspect-ratio:560/420;
+    max-height:100%;
+  }
+  #houseSvgHolder::after{
+    content:"";
+    position:absolute;
+    bottom:-3%;left:6%;right:6%;
+    height:8%;
+    background:radial-gradient(ellipse, rgba(74,51,36,0.16), transparent 75%);
+    z-index:-1;
+  }
+  #houseSvgHolder svg{
+    width:100%;height:100%;
+    display:block;
+    overflow:visible;
+  }
+
+  /* 裝飾物 / 污漬都是疊在 svg 上方的絕對定位圖層 */
+  #decorLayer, #stainLayer, #fxLayer{
+    position:absolute;
+    top:0;left:0;width:100%;height:100%;
+    pointer-events:none;
+  }
+  #decorLayer{ pointer-events:none; }
+  .decor-item{
+    position:absolute;
+    pointer-events:auto;
+    cursor:grab;
+    user-select:none;
+    transform:translate(-50%,-50%);
+    filter:drop-shadow(0 2px 3px rgba(74,51,36,0.25));
+    touch-action:none;
+  }
+  .decor-item.dragging{ cursor:grabbing; opacity:0.85; z-index:50; }
+
+  .stain-spot{
+    position:absolute;
+    pointer-events:auto;
+    transform:translate(-50%,-50%);
+    cursor:pointer;
+  }
+  .stain-spot svg{ display:block; }
+
+  /* ---------- 底部功能列 ---------- */
+  #navbar{
+    flex-shrink:0;
+    display:flex;
+    justify-content:center;
+    gap:10px;
+    padding:12px 14px 16px;
+    background:linear-gradient(180deg,rgba(244,236,221,0),var(--cream-deep) 40%);
+  }
+  .nav-btn{
+    flex:0 1 110px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:4px;
+    padding:10px 8px 8px;
+    background:var(--paper);
+    border:2px solid var(--wood);
+    border-radius:14px;
+    cursor:pointer;
+    transition:transform .15s ease, box-shadow .15s ease, background .15s ease;
+    box-shadow:0 3px 0 var(--wood-dark);
+  }
+  .nav-btn:hover{ transform:translateY(-2px); }
+  .nav-btn:active{ transform:translateY(1px); box-shadow:0 1px 0 var(--wood-dark); }
+  .nav-btn.active{ background:var(--gold); border-color:var(--wood-dark); }
+  .nav-btn .nav-icon{ font-size:22px; line-height:1; }
+  .nav-btn .nav-label{ font-size:12px; letter-spacing:1px; color:var(--wood-dark); font-weight:600; }
+
+  /* ---------- 面板（記事 / 清潔提示 / 裝飾提示） ---------- */
+  #panelOverlay{
+    position:absolute;
+    inset:0;
+    background:rgba(74,51,36,0.38);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:100;
+    padding:18px;
+  }
+  #panelOverlay.show{ display:flex; }
+  #panel{
+    width:100%;
+    max-width:420px;
+    max-height:90%;
+    overflow-y:auto;
+    background:var(--paper);
+    border:3px solid var(--wood);
+    border-radius:18px;
+    padding:20px 20px 18px;
+    box-shadow:0 10px 30px rgba(74,51,36,0.4);
+    position:relative;
+  }
+  #panel h2{
+    margin:0 0 12px;
+    font-size:18px;
+    color:var(--wood-dark);
+    letter-spacing:2px;
+    border-bottom:2px dashed var(--stain);
+    padding-bottom:8px;
+  }
+  #panelClose{
+    position:absolute;
+    top:12px;right:14px;
+    background:none;border:none;
+    font-size:18px;
+    color:var(--wood-dark);
+    cursor:pointer;
+  }
+  .mood-tabs{
+    display:flex;gap:8px;margin-bottom:12px;
+  }
+  .mood-tab{
+    flex:1;
+    padding:8px 6px;
+    text-align:center;
+    border-radius:10px;
+    border:2px solid var(--stain);
+    background:var(--cream);
+    cursor:pointer;
+    font-size:13px;
+    color:var(--stain-dark);
+    font-weight:600;
+  }
+  .mood-tab.selected[data-mood="neg"]{ background:var(--stain); color:var(--paper); border-color:var(--stain-dark); }
+  .mood-tab.selected[data-mood="pos"]{ background:var(--moss); color:var(--paper); border-color:#566B43; }
+
+  #entryText{
+    width:100%;
+    min-height:90px;
+    resize:vertical;
+    border:2px solid var(--stain);
+    border-radius:10px;
+    padding:10px;
+    font-family:inherit;
+    font-size:14px;
+    color:var(--ink);
+    background:#fff;
+  }
+  #entryText:focus{ outline:2px solid var(--gold); }
+
+  #entrySubmit{
+    margin-top:10px;
+    width:100%;
+    padding:10px;
+    border:none;
+    border-radius:10px;
+    background:var(--wood);
+    color:var(--paper);
+    font-size:14px;
+    letter-spacing:2px;
+    cursor:pointer;
+    font-weight:600;
+  }
+  #entrySubmit:hover{ background:var(--wood-dark); }
+
+  .entry-list{
+    margin-top:16px;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    max-height:220px;
+    overflow-y:auto;
+  }
+  .entry-row{
+    font-size:12.5px;
+    padding:8px 10px;
+    border-radius:8px;
+    background:var(--cream);
+    color:var(--ink);
+    border-left:4px solid var(--stain);
+  }
+  .entry-row.pos{ border-left-color:var(--moss); }
+  .entry-row-top{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:2px;
+  }
+  .entry-row .entry-date{
+    font-size:10px;color:var(--stain-dark);
+  }
+  .entry-row .entry-text{
+    line-height:1.5;
+  }
+  .entry-delete{
+    flex-shrink:0;
+    border:none;
+    background:none;
+    color:var(--stain-dark);
+    font-size:12px;
+    line-height:1;
+    padding:2px 6px;
+    border-radius:6px;
+    cursor:pointer;
+    white-space:nowrap;
+    transition:background .15s, color .15s;
+  }
+  .entry-delete:hover{ background:rgba(110,100,88,0.12); }
+  .entry-delete.confirming{
+    color:#fff;
+    background:var(--roof-dark);
+    font-size:11px;
+    font-weight:600;
+    padding:2px 8px;
+  }
+  .entry-delete.confirming:hover{ background:#7a3320; }
+
+  .hint-box{
+    background:var(--cream);
+    border-radius:10px;
+    padding:10px 12px;
+    font-size:13px;
+    color:var(--wood-dark);
+    line-height:1.6;
+  }
+
+  /* ---------- 飄出文字／煙霧效果 ---------- */
+  .rising-note{
+    position:absolute;
+    transform:translate(-50%,-50%);
+    background:var(--paper);
+    border:2px solid var(--stain);
+    border-radius:10px;
+    padding:8px 12px;
+    font-size:12.5px;
+    color:var(--ink);
+    max-width:180px;
+    text-align:center;
+    box-shadow:0 4px 10px rgba(74,51,36,.3);
+    animation:riseAndFade 2.2s ease forwards;
+    z-index:60;
+    pointer-events:none;
+  }
+  @keyframes riseAndFade{
+    0%{ opacity:0; transform:translate(-50%,-30%) scale(0.8); }
+    15%{ opacity:1; transform:translate(-50%,-60%) scale(1); }
+    70%{ opacity:1; transform:translate(-50%,-120%) scale(1); filter:blur(0px); }
+    100%{ opacity:0; transform:translate(-50%,-170%) scale(1.05); filter:blur(3px); }
+  }
+  .smoke-puff{
+    position:absolute;
+    border-radius:50%;
+    background:radial-gradient(circle, rgba(255,255,255,0.9), rgba(220,214,200,0.0));
+    pointer-events:none;
+    animation:puffUp 1.1s ease-out forwards;
+    z-index:55;
+  }
+  @keyframes puffUp{
+    0%{ opacity:.85; transform:translate(-50%,-50%) scale(0.3); }
+    100%{ opacity:0; transform:translate(-50%,-130%) scale(1.6); }
+  }
+  .sparkle-puff{
+    position:absolute;
+    pointer-events:none;
+    font-size:14px;
+    z-index:56;
+    animation:sparkleUp 1s ease-out forwards;
+  }
+  @keyframes sparkleUp{
+    0%{ opacity:0; transform:translate(-50%,-50%) scale(.4) rotate(0deg); }
+    30%{ opacity:1; transform:translate(-50%,-90%) scale(1.1) rotate(40deg); }
+    100%{ opacity:0; transform:translate(-50%,-160%) scale(.6) rotate(120deg); }
+  }
+
+  .toast{
+    position:absolute;
+    bottom:18px;left:50%;
+    transform:translateX(-50%);
+    background:var(--wood-dark);
+    color:var(--paper);
+    padding:8px 16px;
+    border-radius:20px;
+    font-size:12.5px;
+    z-index:120;
+    opacity:0;
+    transition:opacity .3s;
+    pointer-events:none;
+  }
+  .toast.show{ opacity:1; }
+
+  ::-webkit-scrollbar{ width:6px; }
+  ::-webkit-scrollbar-thumb{ background:var(--stain); border-radius:3px; }
+</style>
+</head>
+<body>
+<div id="app">
+
+  <div id="titlebar">
+    <h1>小　屋　日　記</h1>
+    <p>HOME · DIARY · COTTAGE</p>
+  </div>
+
+  <div id="scene-wrap">
+    <div id="houseSvgHolder">
+      <svg id="houseSvg" viewBox="0 0 560 420" xmlns="http://www.w3.org/2000/svg"></svg>
+      <div id="decorLayer"></div>
+      <div id="stainLayer"></div>
+      <div id="fxLayer"></div>
+    </div>
+  </div>
+
+  <div id="navbar">
+    <div class="nav-btn active" data-view="home">
+      <div class="nav-icon">🏠</div>
+      <div class="nav-label">小屋</div>
+    </div>
+    <div class="nav-btn" data-view="diary">
+      <div class="nav-icon">📔</div>
+      <div class="nav-label">記事</div>
+    </div>
+    <div class="nav-btn" data-view="clean">
+      <div class="nav-icon">🧽</div>
+      <div class="nav-label">清潔</div>
+    </div>
+    <div class="nav-btn" data-view="decor">
+      <div class="nav-icon">🎀</div>
+      <div class="nav-label">裝飾</div>
+    </div>
+  </div>
+
+  <div id="panelOverlay">
+    <div id="panel"></div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============ 狀態 ============ */
+  const STORAGE_KEY = "cottageDiaryState_v1";
+  let state = loadState();
+
+  function defaultState(){
+    return {
+      entries: [],          // {id, mood:'pos'|'neg', text, date, stainId?, decorId?, resolved?}
+      stains: [],           // {id, entryId, x, y, hits, spotIndex}
+      decorations: [],      // {id, entryId, type, x, y, rot, scale}
+      nextId: 1
+    };
+  }
+  function loadState(){
+    try{
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if(raw) return Object.assign(defaultState(), JSON.parse(raw));
+    }catch(e){}
+    return defaultState();
+  }
+  function saveState(){
+    try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); }catch(e){}
+  }
+  function genId(){ return state.nextId++; }
+
+  /* ============ DOM refs ============ */
+  const houseSvg = document.getElementById('houseSvg');
+  const decorLayer = document.getElementById('decorLayer');
+  const stainLayer = document.getElementById('stainLayer');
+  const fxLayer = document.getElementById('fxLayer');
+  const panelOverlay = document.getElementById('panelOverlay');
+  const panel = document.getElementById('panel');
+  const navBtns = document.querySelectorAll('.nav-btn');
+  const toastEl = document.getElementById('toast');
+
+  /* ============ 小屋 SVG（等角剖視室內：客廳＋廚房＋樓梯） ============ */
+  function buildHouse(){
+    houseSvg.innerHTML = `
+      <!-- ===== 外框滾邊／地板／左右牆（標準等角箱型房間） ===== -->
+      <polygon points="39.0,138.5 280.0,18.0 521.0,138.5 521.0,278.8 280.0,397.9 39.0,278.8" fill="none" stroke="#A9C4A5" stroke-width="9" stroke-linejoin="round"/>
+      <polygon points="46.0,276.7 280.0,159.7 514.0,276.7 280.0,393.7" fill="#F0DEC0" stroke="#4A3324" stroke-width="3"/>
+      <polygon points="46.0,142.0 280.0,25.0 280.0,159.7 46.0,276.7" fill="#EFE6D8" stroke="#4A3324" stroke-width="3"/>
+      <polygon points="280.0,25.0 514.0,142.0 514.0,276.7 280.0,159.7" fill="#E3D9C8" stroke="#4A3324" stroke-width="3"/>
+
+      <!-- ===== 客廳窗（左牆） ===== -->
+      <polygon points="241.7,63.0 173.7,97.0 173.7,145.5 241.7,111.5" fill="#DCEFE3" stroke="#6B4A35" stroke-width="2.5"/>
+      <line x1="207.7" y1="80.0" x2="207.7" y2="128.5" stroke="#6B4A35" stroke-width="2"/>
+      <line x1="241.7" y1="87.2" x2="173.7" y2="121.3" stroke="#6B4A35" stroke-width="2"/>
+
+      <!-- ===== 層架（右牆，書本擺飾） ===== -->
+      <polygon points="301.3,68.0 365.1,99.9 365.1,103.9 301.3,72.0" fill="#C99A4A" stroke="#4A3324" stroke-width="2.2"/>
+      <line x1="307.6" y1="63.1" x2="307.6" y2="71.2" stroke="#B5563C" stroke-width="4"/>
+      <line x1="312.8" y1="65.6" x2="312.8" y2="73.7" stroke="#7A9168" stroke-width="4"/>
+      <line x1="317.9" y1="68.2" x2="317.9" y2="76.3" stroke="#9C9183" stroke-width="4"/>
+      <line x1="323.0" y1="70.7" x2="323.0" y2="78.8" stroke="#6B4A35" stroke-width="4"/>
+
+      <!-- ===== 壁爐（左牆角，立體三面箱型） ===== -->
+      <g id="fireplace">
+        <polygon points="263.0,127.8 305.5,149.1 269.4,167.1 226.8,145.9" fill="#fbf7ee" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="305.5,189.5 269.4,207.6 269.4,167.1 305.5,149.1" fill="#dcd8cd" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="269.4,207.6 226.8,186.3 226.8,145.9 269.4,167.1" fill="#b4b1a8" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="269.4,203.5 226.8,182.2 226.8,162.0 269.4,183.3" fill="#B5563C" stroke="#4A3324" stroke-width="1.8"/>
+      </g>
+
+      <!-- ===== 書架（立體三面箱型） ===== -->
+      <g id="bookshelf">
+        <polygon points="218.3,120.5 252.4,137.5 216.2,155.6 182.2,138.6" fill="#d4b071" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="252.4,207.6 216.2,225.6 216.2,155.6 252.4,137.5" fill="#b08741" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="216.2,225.6 182.2,208.6 182.2,138.6 216.2,155.6" fill="#906e35" stroke="#4A3324" stroke-width="2.2"/>
+        <line x1="216.2" y1="190.6" x2="182.2" y2="173.6" stroke="#4A3324" stroke-width="1.5" opacity="0.6"/>
+      </g>
+
+      <!-- ===== 廚房檯面（立體三面箱型＋分隔線） ===== -->
+      <g id="kitchenCounter">
+        <polygon points="377.8,185.7 505.4,249.5 473.5,265.5 345.9,201.7" fill="#d4b071" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="505.4,272.4 473.5,288.4 473.5,265.5 505.4,249.5" fill="#b08741" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="473.5,288.4 345.9,224.6 345.9,201.7 473.5,265.5" fill="#906e35" stroke="#4A3324" stroke-width="2.2"/>
+        <line x1="420.4" y1="207.0" x2="388.5" y2="222.9" stroke="#4A3324" stroke-width="1.5" opacity="0.5"/>
+        <line x1="462.9" y1="228.3" x2="431.0" y2="244.2" stroke="#4A3324" stroke-width="1.5" opacity="0.5"/>
+      </g>
+
+      <!-- ===== 沙發（座墊＋椅背＋雙扶手，立體箱型組合） ===== -->
+      <g id="sofa">
+        <polygon points="182.2,215.6 254.5,251.8 219.6,269.2 147.3,233.1" fill="#eee6d4" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="254.5,263.9 219.6,281.4 219.6,269.2 254.5,251.8" fill="#cdc4b0" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="219.6,281.4 147.3,245.2 147.3,233.1 219.6,269.2" fill="#a8a090" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="182.2,200.8 254.5,237.0 246.8,240.8 174.5,204.6" fill="#f6f0e4" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="254.5,251.8 246.8,255.6 246.8,240.8 254.5,237.0" fill="#d6cfc2" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="246.8,255.6 174.5,219.5 174.5,204.6 246.8,240.8" fill="#afa99f" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="182.2,204.9 191.5,209.5 156.6,227.0 147.3,222.3" fill="#eee6d4" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="191.5,220.3 156.6,237.8 156.6,227.0 191.5,209.5" fill="#cdc4b0" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="156.6,237.8 147.3,233.1 147.3,222.3 156.6,227.0" fill="#a8a090" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="245.1,236.3 254.5,241.0 219.6,258.5 210.2,253.8" fill="#eee6d4" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="254.5,251.8 219.6,269.2 219.6,258.5 254.5,241.0" fill="#cdc4b0" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="219.6,269.2 210.2,264.6 210.2,253.8 219.6,258.5" fill="#a8a090" stroke="#4A3324" stroke-width="2.2"/>
+      </g>
+
+      <!-- ===== 茶几（立體箱型） ===== -->
+      <g id="rug">
+        <polygon points="148.1,246.8 175.8,260.6 148.1,274.4 120.5,260.6" fill="#a66a58" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="175.8,271.4 148.1,285.2 148.1,274.4 175.8,260.6" fill="#7c3824" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="148.1,285.2 120.5,271.4 120.5,260.6 148.1,274.4" fill="#662e1d" stroke="#4A3324" stroke-width="2.2"/>
+      </g>
+
+      <!-- ===== 邊櫃（立體箱型） ===== -->
+      <polygon points="82.2,231.7 116.2,248.7 82.2,265.7 48.2,248.7" fill="#9bb4c5" stroke="#4A3324" stroke-width="2.2"/>
+      <polygon points="116.2,275.6 82.2,292.6 82.2,265.7 116.2,248.7" fill="#6f8c9f" stroke="#4A3324" stroke-width="2.2"/>
+      <polygon points="82.2,292.6 48.2,275.6 48.2,248.7 82.2,265.7" fill="#5b7382" stroke="#4A3324" stroke-width="2.2"/>
+
+      <!-- ===== 餐桌（立體箱型） ===== -->
+      <polygon points="301.3,257.6 335.3,274.6 301.3,291.6 267.2,274.6" fill="#a66a58" stroke="#4A3324" stroke-width="2.2"/>
+      <polygon points="335.3,289.4 301.3,306.5 301.3,291.6 335.3,274.6" fill="#7c3824" stroke="#4A3324" stroke-width="2.2"/>
+      <polygon points="301.3,306.5 267.2,289.4 267.2,274.6 301.3,291.6" fill="#662e1d" stroke="#4A3324" stroke-width="2.2"/>
+
+      <!-- ===== 樓梯（五階逐級爬升，通往二樓） ===== -->
+      <g id="stairs">
+        <polygon points="458.7,221.4 490.6,237.3 476.9,244.1 445.0,228.2" fill="#eee6d4" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="490.6,277.7 476.9,284.5 476.9,244.1 490.6,237.3" fill="#cdc4b0" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="476.9,284.5 445.0,268.6 445.0,228.2 476.9,244.1" fill="#a8a090" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="445.0,236.3 476.9,252.2 463.3,259.0 431.4,243.1" fill="#eee6d4" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="476.9,284.5 463.3,291.4 463.3,259.0 476.9,252.2" fill="#cdc4b0" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="463.3,291.4 431.4,275.4 431.4,243.1 463.3,259.0" fill="#a8a090" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="431.4,251.2 463.3,267.1 449.7,273.9 417.8,258.0" fill="#eee6d4" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="463.3,291.4 449.7,298.2 449.7,273.9 463.3,267.1" fill="#cdc4b0" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="449.7,298.2 417.8,282.2 417.8,258.0 449.7,273.9" fill="#a8a090" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="417.8,266.0 449.7,282.0 436.1,288.8 404.2,272.8" fill="#eee6d4" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="449.7,298.2 436.1,305.0 436.1,288.8 449.7,282.0" fill="#cdc4b0" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="436.1,305.0 404.2,289.0 404.2,272.8 436.1,288.8" fill="#a8a090" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="404.2,280.9 436.1,296.9 422.5,303.7 390.6,287.7" fill="#eee6d4" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="436.1,305.0 422.5,311.8 422.5,303.7 436.1,296.9" fill="#cdc4b0" stroke="#4A3324" stroke-width="1.8"/>
+        <polygon points="422.5,311.8 390.6,295.8 390.6,287.7 422.5,303.7" fill="#a8a090" stroke="#4A3324" stroke-width="1.8"/>
+      </g>
+
+      <!-- ===== 廚房上櫃（懸掛於右牆，立體箱型） ===== -->
+      <g id="upperCabinet">
+        <polygon points="377.8,111.6 505.4,175.4 477.8,189.3 350.2,125.5" fill="#d4b071" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="505.4,202.4 477.8,216.2 477.8,189.3 505.4,175.4" fill="#b08741" stroke="#4A3324" stroke-width="2.2"/>
+        <polygon points="477.8,216.2 350.2,152.4 350.2,125.5 477.8,189.3" fill="#906e35" stroke="#4A3324" stroke-width="2.2"/>
+      </g>
+    `;
+  }
+  buildHouse();
+
+  /* 可附著污漬的座標點（百分比，對應 viewBox="0 0 560 420"）
+     分布於客廳牆面、壁爐、沙發、地毯、廚房牆面與地板等室內各處 */
+  const STAIN_SPOTS = [
+    {x:44.3,y:42.4}, // 壁爐磚面
+    {x:38.8,y:39.3}, // 書架層板
+    {x:37.0,y:25.0}, // 窗下牆角
+    {x:35.7,y:53.6}, // 沙發椅背
+    {x:33.0,y:58.3}, // 沙發座墊
+    {x:26.4,y:63.1}, // 茶几
+    {x:31.2,y:59.5}, // 地板（沙發前）
+    {x:14.6,y:61.9}, // 邊櫃
+    {x:76.8,y:35.7}, // 廚房上櫃旁牆面
+    {x:75.0,y:54.8}, // 廚房檯面下方
+    {x:53.8,y:66.7}, // 餐桌旁地板
+    {x:82.1,y:59.5}, // 樓梯下牆角
+    {x:85.7,y:76.2}, // 廚房地板（右側）
+    {x:39.3,y:73.8}  // 客廳地板（中段）
+  ];
+
+  const DECOR_TYPES = [
+    {type:'flowerpot', emoji:'🪴'},
+    {type:'lantern', emoji:'🏮'},
+    {type:'wreath', emoji:'🌿'},
+    {type:'bird', emoji:'🐦'},
+    {type:'star', emoji:'⭐'},
+    {type:'butterfly', emoji:'🦋'},
+    {type:'mushroom', emoji:'🍄'},
+    {type:'cat', emoji:'🐈'},
+    {type:'sunflower', emoji:'🌻'},
+    {type:'ribbon', emoji:'🎗️'},
+    {type:'candle', emoji:'🕯️'},
+    {type:'basket', emoji:'🧺'}
+  ];
+
+  /* ============ 渲染：污漬 ============ */
+  function renderStains(){
+    stainLayer.innerHTML = '';
+    state.stains.forEach(st=>{
+      const wrap = document.createElement('div');
+      wrap.className = 'stain-spot';
+      wrap.style.left = st.x + '%';
+      wrap.style.top = st.y + '%';
+      wrap.dataset.stainId = st.id;
+      const opacity = 1 - (st.hits * 0.32);
+      const size = 30 + (3-st.hits)*2;
+      wrap.innerHTML = `
+        <svg width="${size}" height="${size}" viewBox="0 0 40 40">
+          <path d="M20 3 C28 3 35 10 34 19 C33 27 27 34 19 35 C10 36 4 29 5 20 C6 11 13 3 20 3 Z"
+            fill="#6E6458" opacity="${Math.max(opacity,0.12)}"/>
+          <path d="M20 8 C25 8 29 13 28 19 C27 24 23 29 18 29 C12 30 9 25 10 19 C11 13 15 8 20 8 Z"
+            fill="#4A3324" opacity="${Math.max(opacity*0.6,0.06)}"/>
+        </svg>
+      `;
+      wrap.title = '污漬（點擊清潔）';
+      stainLayer.appendChild(wrap);
+    });
+  }
+
+  /* ============ 渲染：裝飾物 ============ */
+  function renderDecor(dragEnabled){
+    decorLayer.innerHTML = '';
+    state.decorations.forEach(dec=>{
+      const el = document.createElement('div');
+      el.className = 'decor-item';
+      el.style.left = dec.x + '%';
+      el.style.top = dec.y + '%';
+      el.style.fontSize = '34px';
+      el.style.transform = `translate(-50%,-50%) rotate(${dec.rot||0}deg) scale(${dec.scale||1})`;
+      el.dataset.decorId = dec.id;
+      el.textContent = (DECOR_TYPES.find(t=>t.type===dec.type)||{}).emoji || '✨';
+      el.style.cursor = dragEnabled ? 'grab' : 'default';
+      if(dragEnabled){ enableDrag(el, dec); }
+      decorLayer.appendChild(el);
+    });
+  }
+
+  /* ============ 拖曳裝飾物 ============ */
+  function enableDrag(el, dec){
+    let dragging=false, offsetX=0, offsetY=0, holderRect=null;
+    const holder = document.getElementById('houseSvgHolder');
+
+    function getXY(e){
+      const t = e.touches ? e.touches[0] : e;
+      return {x:t.clientX, y:t.clientY};
+    }
+    function onDown(e){
+      dragging=true;
+      el.classList.add('dragging');
+      holderRect = holder.getBoundingClientRect();
+      const p = getXY(e);
+      offsetX = p.x - (holderRect.left + holderRect.width*dec.x/100);
+      offsetY = p.y - (holderRect.top + holderRect.height*dec.y/100);
+      e.preventDefault();
+    }
+    function onMove(e){
+      if(!dragging) return;
+      const p = getXY(e);
+      let nx = ((p.x - offsetX - holderRect.left) / holderRect.width)*100;
+      let ny = ((p.y - offsetY - holderRect.top) / holderRect.height)*100;
+      nx = Math.max(4, Math.min(96, nx));
+      ny = Math.max(4, Math.min(96, ny));
+      dec.x = nx; dec.y = ny;
+      el.style.left = nx+'%';
+      el.style.top = ny+'%';
+      e.preventDefault();
+    }
+    function onUp(){
+      if(!dragging) return;
+      dragging=false;
+      el.classList.remove('dragging');
+      saveState();
+    }
+    el.addEventListener('mousedown', onDown);
+    el.addEventListener('touchstart', onDown, {passive:false});
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('touchmove', onMove, {passive:false});
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('touchend', onUp);
+  }
+
+  /* ============ 視圖切換 ============ */
+  function setActiveNav(view){
+    navBtns.forEach(b=> b.classList.toggle('active', b.dataset.view===view));
+  }
+  function closePanel(){
+    panelOverlay.classList.remove('show');
+    panel.innerHTML='';
+  }
+  function openPanel(html){
+    panel.innerHTML = html;
+    panelOverlay.classList.add('show');
+  }
+
+  function showToast(msg){
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    setTimeout(()=> toastEl.classList.remove('show'), 1600);
+  }
+
+  /* ============ 記事面板 ============ */
+  let currentMood = 'neg';
+  function openDiaryPanel(){
+    setActiveNav('diary');
+    const html = `
+      <button id="panelClose">✕</button>
+      <h2>寫 一 篇 記 事</h2>
+      <div class="mood-tabs">
+        <div class="mood-tab" data-mood="neg">😔 負面記事</div>
+        <div class="mood-tab" data-mood="pos">🌿 正面記事</div>
+      </div>
+      <textarea id="entryText" placeholder="今天想說些什麼……"></textarea>
+      <button id="entrySubmit">寫　下　這　筆　記　事</button>
+      <div class="entry-list" id="entryList"></div>
+    `;
+    openPanel(html);
+    document.getElementById('panelClose').onclick = closePanel;
+
+    const tabs = panel.querySelectorAll('.mood-tab');
+    function refreshTabs(){
+      tabs.forEach(t=> t.classList.toggle('selected', t.dataset.mood===currentMood));
+    }
+    tabs.forEach(t=> t.onclick = ()=>{ currentMood = t.dataset.mood; refreshTabs(); });
+    refreshTabs();
+
+    document.getElementById('entrySubmit').onclick = ()=>{
+      const ta = document.getElementById('entryText');
+      const text = ta.value.trim();
+      if(!text){ showToast('先寫點什麼吧'); return; }
+      addEntry(currentMood, text);
+      ta.value='';
+      renderEntryList();
+      showToast(currentMood==='neg' ? '小屋出現了一點污漬…' : '小屋多了一個裝飾！');
+    };
+
+    renderEntryList();
+  }
+
+  function renderEntryList(){
+    const listEl = document.getElementById('entryList');
+    if(!listEl) return;
+    const items = state.entries.slice().reverse().slice(0,30);
+    listEl.innerHTML = items.map(e=>{
+      const cls = e.mood==='pos' ? 'pos' : '';
+      const tag = e.mood==='pos' ? '🌿 正面' : (e.resolved ? '✨ 已淨化' : '😔 負面');
+      return `<div class="entry-row ${cls}" data-entry-id="${e.id}">
+        <div class="entry-row-top">
+          <span class="entry-date">${e.date} · ${tag}</span>
+          <button class="entry-delete" data-entry-id="${e.id}" title="刪除這筆記事">✕</button>
+        </div>
+        <div class="entry-text">${escapeHtml(e.text)}</div>
+      </div>`;
+    }).join('') || '<div class="hint-box">還沒有任何記事，寫下今天的心情吧。</div>';
+
+    listEl.querySelectorAll('.entry-delete').forEach(btn=>{
+      btn.onclick = (ev)=>{
+        ev.stopPropagation();
+        const id = Number(btn.dataset.entryId);
+        confirmDeleteEntry(id);
+      };
+    });
+  }
+
+  function escapeHtml(s){
+    return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  function addEntry(mood, text){
+    const id = genId();
+    const date = new Date();
+    const dateStr = `${date.getMonth()+1}/${date.getDate()} ${String(date.getHours()).padStart(2,'0')}:${String(date.getMinutes()).padStart(2,'0')}`;
+    const entry = {id, mood, text, date:dateStr};
+
+    if(mood==='neg'){
+      const spotIndex = state.stains.length % STAIN_SPOTS.length;
+      const spot = STAIN_SPOTS[spotIndex];
+      const jitterX = (Math.random()*4-2);
+      const jitterY = (Math.random()*4-2);
+      const stain = {id:genId(), entryId:id, x:spot.x+jitterX, y:spot.y+jitterY, hits:0, spotIndex};
+      entry.stainId = stain.id;
+      state.stains.push(stain);
+    } else {
+      const t = DECOR_TYPES[Math.floor(Math.random()*DECOR_TYPES.length)];
+      const x = 10 + Math.random()*80;
+      const y = 20 + Math.random()*72;
+      const rot = Math.floor(Math.random()*30 - 15);
+      const decor = {id:genId(), entryId:id, type:t.type, x, y, rot, scale:0.9+Math.random()*0.3};
+      entry.decorId = decor.id;
+      state.decorations.push(decor);
+    }
+    state.entries.push(entry);
+    saveState();
+    renderStains();
+    renderDecor(currentNavView==='decor');
+  }
+
+  /* ============ 刪除記事（連動移除對應污漬／裝飾） ============ */
+  let pendingDeleteId = null;
+  function confirmDeleteEntry(id){
+    const row = panel.querySelector(`.entry-row[data-entry-id="${id}"]`);
+    const btn = row ? row.querySelector('.entry-delete') : null;
+    if(!row || !btn) return;
+
+    if(pendingDeleteId === id){
+      // 第二次點擊，正式刪除
+      deleteEntry(id);
+      pendingDeleteId = null;
+      return;
+    }
+    // 第一次點擊，要求再次確認
+    pendingDeleteId = id;
+    btn.textContent = '確定刪除？';
+    btn.classList.add('confirming');
+    setTimeout(()=>{
+      if(pendingDeleteId === id){
+        pendingDeleteId = null;
+        if(btn.isConnected){
+          btn.textContent = '✕';
+          btn.classList.remove('confirming');
+        }
+      }
+    }, 2500);
+  }
+
+  function deleteEntry(id){
+    const entry = state.entries.find(e=>e.id===id);
+    if(!entry) return;
+
+    if(entry.mood==='neg' && entry.stainId!=null){
+      state.stains = state.stains.filter(s=>s.id!==entry.stainId);
+    }
+    if(entry.mood==='pos' && entry.decorId!=null){
+      state.decorations = state.decorations.filter(d=>d.id!==entry.decorId);
+    }
+    state.entries = state.entries.filter(e=>e.id!==id);
+
+    saveState();
+    renderStains();
+    renderDecor(currentNavView==='decor');
+    renderEntryList();
+    showToast('已刪除這筆記事');
+  }
+
+  /* ============ 清潔互動 ============ */
+  function openCleanHint(){
+    setActiveNav('clean');
+    const dirty = state.stains.length;
+    const html = `
+      <button id="panelClose">✕</button>
+      <h2>清　潔　小　屋</h2>
+      <div class="hint-box">
+        ${dirty===0
+          ? '目前小屋很乾淨，沒有污漬需要清理。'
+          : `小屋上有 <b>${dirty}</b> 處污漬。直接點擊小屋上的污漬，連點三下即可擦去，對應的負面記事會在煙霧中昇華消散。`}
+      </div>
+    `;
+    openPanel(html);
+    document.getElementById('panelClose').onclick = closePanel;
+  }
+
+  function handleStainClick(stainId){
+    const stain = state.stains.find(s=>s.id===stainId);
+    if(!stain) return;
+    stain.hits++;
+    const spotEl = stainLayer.querySelector(`[data-stain-id="${stainId}"]`);
+    if(stain.hits >= 3){
+      // 找出對應 entry 並做昇華效果
+      const entry = state.entries.find(e=>e.stainId===stainId);
+      playPurifyEffect(stain.x, stain.y, entry);
+      state.stains = state.stains.filter(s=>s.id!==stainId);
+      if(entry) entry.resolved = true;
+      saveState();
+      renderStains();
+      showToast('污漬已淨化 ✨');
+    } else {
+      playDustEffect(stain.x, stain.y);
+      renderStains();
+      saveState();
+    }
+  }
+
+  function playDustEffect(xPct, yPct){
+    const holder = document.getElementById('houseSvgHolder');
+    const rect = holder.getBoundingClientRect();
+    for(let i=0;i<4;i++){
+      const puff = document.createElement('div');
+      puff.className='smoke-puff';
+      const size = 10+Math.random()*10;
+      puff.style.width = size+'px';
+      puff.style.height = size+'px';
+      puff.style.left = (xPct + (Math.random()*6-3)) + '%';
+      puff.style.top = (yPct + (Math.random()*6-3)) + '%';
+      puff.style.animationDelay = (i*0.05)+'s';
+      fxLayer.appendChild(puff);
+      setTimeout(()=>puff.remove(), 1300);
+    }
+  }
+
+  function playPurifyEffect(xPct, yPct, entry){
+    // 大量光點 + 文字升起後消散在煙霧中
+    for(let i=0;i<10;i++){
+      const sp = document.createElement('div');
+      sp.className='sparkle-puff';
+      sp.textContent = ['✨','🌫️','💫'][Math.floor(Math.random()*3)];
+      sp.style.left = (xPct + (Math.random()*14-7)) + '%';
+      sp.style.top = (yPct + (Math.random()*10-5)) + '%';
+      sp.style.animationDelay = (Math.random()*0.3)+'s';
+      fxLayer.appendChild(sp);
+      setTimeout(()=>sp.remove(), 1500);
+    }
+    if(entry){
+      const note = document.createElement('div');
+      note.className='rising-note';
+      note.style.left = xPct+'%';
+      note.style.top = yPct+'%';
+      note.textContent = entry.text.length>60 ? entry.text.slice(0,60)+'…' : entry.text;
+      fxLayer.appendChild(note);
+      setTimeout(()=>note.remove(), 2300);
+    }
+  }
+
+  stainLayer.addEventListener('click', (e)=>{
+    const spot = e.target.closest('.stain-spot');
+    if(!spot) return;
+    handleStainClick(Number(spot.dataset.stainId));
+  });
+
+  /* ============ 裝飾模式提示 ============ */
+  function openDecorHint(){
+    setActiveNav('decor');
+    const html = `
+      <button id="panelClose">✕</button>
+      <h2>擺　設　裝　飾</h2>
+      <div class="hint-box">
+        ${state.decorations.length===0
+          ? '目前還沒有裝飾物。寫下正面記事，小屋就會隨機出現新的裝飾。'
+          : '拖曳小屋畫面上的裝飾物，調整它們喜歡的位置吧。'}
+      </div>
+    `;
+    openPanel(html);
+    document.getElementById('panelClose').onclick = closePanel;
+  }
+
+  /* ============ 導覽列邏輯 ============ */
+  let currentNavView = 'home';
+  navBtns.forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const view = btn.dataset.view;
+      currentNavView = view;
+      closePanel();
+      if(view==='home'){
+        setActiveNav('home');
+        renderDecor(false);
+      } else if(view==='diary'){
+        openDiaryPanel();
+        renderDecor(false);
+      } else if(view==='clean'){
+        openCleanHint();
+        renderDecor(false);
+      } else if(view==='decor'){
+        openDecorHint();
+        renderDecor(true);
+      }
+    });
+  });
+
+  panelOverlay.addEventListener('click', (e)=>{
+    if(e.target===panelOverlay) closePanel();
+  });
+
+  /* ============ 初始渲染 ============ */
+  renderStains();
+  renderDecor(false);
+
+})();
+</script>
+</body>
+</html>
